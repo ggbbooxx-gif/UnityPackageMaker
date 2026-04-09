@@ -1,0 +1,94 @@
+Metadata-Version: 2.4
+Name: unity-package-maker
+Version: 0.1.0
+Summary: PyQt desktop tool for exporting Unity 2022 UPM packages
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: PyQt6<7.0,>=6.7
+
+# Unity Package Maker
+
+基于 PyQt6 的桌面工具，用来把任意目录导出为 Unity 2022 可通过 Package Manager 导入的 UPM 包。
+
+## 功能
+
+- 选择源目录与输出目录
+- 填写 `package.json` 所需元数据
+- 自动识别源目录是否已经是 UPM 结构
+- 导出标准 UPM 目录包
+- 同时生成 Unity 可添加的 `.tgz` tarball
+- 生成导出日志，便于排查问题
+
+## 目录结构
+
+```text
+UnityPackageMaker/
+├─ main.py
+├─ pyproject.toml
+├─ requirements.txt
+├─ README.md
+├─ src/
+│  └─ unity_package_maker/
+│     ├─ __init__.py
+│     ├─ app.py
+│     └─ exporter.py
+└─ tests/
+   └─ test_exporter.py
+```
+
+## 安装
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python -m pip install -e .
+```
+
+或者直接双击 / 执行根目录的 `init_env.bat` 完成初始化。
+
+## 运行
+
+```powershell
+.\.venv\Scripts\python.exe main.py
+```
+
+## 生成 EXE
+
+```powershell
+.\build_exe.bat
+```
+
+生成完成后，产物位于：`dist\UnityPackageMaker.exe`
+
+- 脚本会自动调用 `init_env.bat`
+- 脚本会自动安装 `PyInstaller`
+- 脚本会清理旧的 `build/` 与 `dist/` 目录后重新打包
+- 如果 Windows Defender 暂时锁住新生成的 `exe`，脚本会自动重试 3 次
+
+## 使用说明
+
+1. 选择需要打包的源目录。
+2. 选择导出目录。
+3. 填写包名，例如 `com.company.feature`。
+4. 选择源目录模式：
+   - `自动识别`：发现 `Runtime`、`Editor`、`Samples~` 等目录时按 UPM 结构处理。
+   - `源目录已是 UPM 结构`：原样复制目录结构，只重写 `package.json`。
+   - `普通目录打包到 Runtime`：把源目录内容放到 `Runtime/ImportedContent`。
+5. 点击“开始导出”。
+6. 在 Unity 2022 中通过 `Window > Package Manager > + > Add package from tarball...` 选择 `.tgz`，或使用 `Add package from disk...` 选择导出目录中的 `package.json`。
+
+## 测试
+
+```powershell
+$env:PYTHONPATH = "src"
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+```
+
+## 说明
+
+- `Package Name` 需符合 UPM 命名规则，例如 `com.company.toolkit`。
+- `Version` 需使用语义化版本，例如 `1.0.0`。
+- `Unity` 版本格式建议为 `2022.3`。
+- 工具会忽略 `.git`、`__pycache__`、`Thumbs.db`、`*.pyc` 等无关文件。
+- 若 VS Code 仍提示 `Import "PyQt6.QtWidgets" could not be resolved`，通常是解释器没切到 `.venv`；执行一次 `init_env.bat` 后，选择 `.venv\Scripts\python.exe` 即可。

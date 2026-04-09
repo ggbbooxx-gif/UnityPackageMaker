@@ -1,0 +1,12 @@
+README.md
+pyproject.toml
+src/unity_package_maker/__init__.py
+src/unity_package_maker/app.py
+src/unity_package_maker/exporter.py
+src/unity_package_maker.egg-info/PKG-INFO
+src/unity_package_maker.egg-info/SOURCES.txt
+src/unity_package_maker.egg-info/dependency_links.txt
+src/unity_package_maker.egg-info/requires.txt
+src/unity_package_maker.egg-info/top_level.txt
+tests/test_app.py
+tests/test_exporter.py
