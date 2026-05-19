@@ -17,6 +17,7 @@ Requires-Dist: PyQt6<7.0,>=6.7
 - 自动识别源目录是否已经是 UPM 结构
 - 导出标准 UPM 目录包
 - 同时生成 Unity 可添加的 `.tgz` tarball
+- 对缺少 asmdef 的 `Runtime` / `Editor` 代码自动补最小程序集定义
 - 生成导出日志，便于排查问题
 
 ## 目录结构
@@ -75,8 +76,12 @@ python -m pip install -e .
    - `自动识别`：发现 `Runtime`、`Editor`、`Samples~` 等目录时按 UPM 结构处理。
    - `源目录已是 UPM 结构`：原样复制目录结构，只重写 `package.json`。
    - `普通目录打包到 Runtime`：把源目录内容放到 `Runtime/ImportedContent`。
-5. 点击“开始导出”。
-6. 在 Unity 2022 中通过 `Window > Package Manager > + > Add package from tarball...` 选择 `.tgz`，或使用 `Add package from disk...` 选择导出目录中的 `package.json`。
+5. 可选填写“内容子目录”：
+   - 默认是 `ImportedContent`。
+   - 可改成任意单层目录名，例如 `Content`。
+   - 留空时会直接导出到 `Runtime/`、`Editor/` 下，不再额外包一层目录。
+6. 点击“开始导出”。
+7. 在 Unity 2022 中通过 `Window > Package Manager > + > Add package from tarball...` 选择 `.tgz`，或使用 `Add package from disk...` 选择导出目录中的 `package.json`。
 
 ## 测试
 
@@ -91,4 +96,5 @@ $env:PYTHONPATH = "src"
 - `Version` 需使用语义化版本，例如 `1.0.0`。
 - `Unity` 版本格式建议为 `2022.3`。
 - 工具会忽略 `.git`、`__pycache__`、`Thumbs.db`、`*.pyc` 等无关文件。
+- 若导出的包包含 `Runtime` / `Editor` C# 脚本且没有现成 `.asmdef`，工具会自动生成一对最小 asmdef，让 `Editor` 程序集显式引用 `Runtime`。
 - 若 VS Code 仍提示 `Import "PyQt6.QtWidgets" could not be resolved`，通常是解释器没切到 `.venv`；执行一次 `init_env.bat` 后，选择 `.venv\Scripts\python.exe` 即可。

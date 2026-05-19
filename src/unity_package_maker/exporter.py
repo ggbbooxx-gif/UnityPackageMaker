@@ -23,6 +23,7 @@ IGNORED_NAMES = {
 }
 IGNORED_SUFFIXES = {".pyc", ".pyo"}
 UPM_MARKER_DIRS = {"Runtime", "Editor", "Documentation~", "Samples~", "Tests"}
+RAW_ROUTED_DIRS = UPM_MARKER_DIRS - {"Runtime"}
 
 
 @dataclass(slots=True)
@@ -46,6 +47,7 @@ class ExportOptions:
     create_tgz: bool = True
     overwrite: bool = True
     source_mode: str = "auto"
+    content_folder_name: str = "ImportedContent"
 
 
 @dataclass(slots=True)
@@ -88,6 +90,7 @@ def export_package(metadata: PackageMetadata, options: ExportOptions, log: _LOG 
 
     output_dir.mkdir(parents=True, exist_ok=True)
     package_dir = output_dir / options.package_slug
+    content_folder_name = _normalize_content_folder_name(options.content_folder_name)
 
     if package_dir.exists():
         if not options.overwrite:
@@ -105,7 +108,9 @@ def export_package(metadata: PackageMetadata, options: ExportOptions, log: _LOG 
     if resolved_mode == "upm":
         _copy_source_as_package_root(source_dir, package_dir, logger)
     else:
-        _copy_raw_source_into_runtime(source_dir, package_dir, logger)
+        _copy_raw_source_into_runtime(source_dir, package_dir, content_folder_name, logger)
+
+    _ensure_package_asmdefs(package_dir, metadata, logger)
 
     package_json_path = package_dir / "package.json"
     _write_package_json(package_json_path, metadata)
@@ -144,20 +149,137 @@ def _copy_source_as_package_root(source_dir: Path, package_dir: Path, log: _LOG)
 
 
 
-def _copy_raw_source_into_runtime(source_dir: Path, package_dir: Path, log: _LOG) -> None:
-    runtime_dir = package_dir / "Runtime" / "ImportedContent"
+def _copy_raw_source_into_runtime(source_dir: Path, package_dir: Path, content_folder_name: str, log: _LOG) -> None:
+    runtime_dir = _content_root(package_dir / "Runtime", content_folder_name)
     runtime_dir.mkdir(parents=True, exist_ok=True)
 
     for item in source_dir.iterdir():
-        if _should_ignore(item):
+        _copy_raw_entry(item, runtime_dir, package_dir, content_folder_name, Path(), log)
+
+
+def _copy_raw_entry(source_path: Path, runtime_dir: Path, package_dir: Path, content_folder_name: str, relative_parent: Path, log: _LOG) -> None:
+    if _should_ignore(source_path):
+        return
+
+    if _should_skip_routed_meta_file(source_path):
+        return
+
+    if source_path.is_dir():
+        if source_path.name in RAW_ROUTED_DIRS:
+            destination = _content_root(package_dir / source_path.name, content_folder_name) / relative_parent
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            log(f"导入目录到 {source_path.name}: {(relative_parent / source_path.name).as_posix()}")
+            shutil.copytree(
+                source_path,
+                destination,
+                dirs_exist_ok=True,
+                ignore=shutil.ignore_patterns(*IGNORED_NAMES, "*.pyc", "*.pyo"),
+            )
+            return
+
+        next_relative_parent = relative_parent / source_path.name
+        for child in source_path.iterdir():
+            _copy_raw_entry(child, runtime_dir, package_dir, content_folder_name, next_relative_parent, log)
+        return
+
+    destination = runtime_dir / relative_parent / source_path.name
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    log(f"导入文件到 Runtime: {(relative_parent / source_path.name).as_posix()}")
+    shutil.copy2(source_path, destination)
+
+
+def _should_skip_routed_meta_file(source_path: Path) -> bool:
+    if source_path.suffix != ".meta":
+        return False
+    if source_path.stem not in RAW_ROUTED_DIRS:
+        return False
+    return source_path.with_suffix("").is_dir()
+
+
+def _normalize_content_folder_name(content_folder_name: str) -> str:
+    normalized = content_folder_name.strip()
+    if not normalized:
+        return ""
+    if "/" in normalized or "\\" in normalized:
+        raise ValueError("内容子目录名不能包含路径分隔符。")
+    return normalized
+
+
+def _content_root(base_dir: Path, content_folder_name: str) -> Path:
+    if not content_folder_name:
+        return base_dir
+    return base_dir / content_folder_name
+
+
+def _ensure_package_asmdefs(package_dir: Path, metadata: PackageMetadata, log: _LOG) -> None:
+    runtime_dir = package_dir / "Runtime"
+    editor_dir = package_dir / "Editor"
+
+    runtime_assembly_name = _ensure_runtime_asmdef(runtime_dir, metadata.name, log)
+    _ensure_editor_asmdef(editor_dir, metadata.name, runtime_assembly_name, log)
+
+
+def _ensure_runtime_asmdef(runtime_dir: Path, assembly_name: str, log: _LOG) -> str | None:
+    if not _contains_csharp_files(runtime_dir):
+        return None
+
+    asmdef_names = _existing_asmdef_names(runtime_dir)
+    if len(asmdef_names) == 1:
+        return asmdef_names[0]
+    if len(asmdef_names) > 1:
+        return None
+
+    asmdef_path = runtime_dir / f"{assembly_name}.asmdef"
+    _write_asmdef(asmdef_path, {"name": assembly_name})
+    log(f"生成 Runtime asmdef: {asmdef_path.name}")
+    return assembly_name
+
+
+def _ensure_editor_asmdef(editor_dir: Path, package_name: str, runtime_assembly_name: str | None, log: _LOG) -> None:
+    if not _contains_csharp_files(editor_dir):
+        return
+
+    asmdef_names = _existing_asmdef_names(editor_dir)
+    if asmdef_names:
+        return
+
+    asmdef_name = f"{package_name}.Editor"
+    asmdef_data: dict[str, object] = {
+        "name": asmdef_name,
+        "includePlatforms": ["Editor"],
+    }
+    if runtime_assembly_name:
+        asmdef_data["references"] = [runtime_assembly_name]
+
+    asmdef_path = editor_dir / f"{asmdef_name}.asmdef"
+    _write_asmdef(asmdef_path, asmdef_data)
+    log(f"生成 Editor asmdef: {asmdef_path.name}")
+
+
+def _contains_csharp_files(root_dir: Path) -> bool:
+    if not root_dir.exists() or not root_dir.is_dir():
+        return False
+    return any(root_dir.rglob("*.cs"))
+
+
+def _existing_asmdef_names(root_dir: Path) -> list[str]:
+    if not root_dir.exists() or not root_dir.is_dir():
+        return []
+
+    asmdef_names: list[str] = []
+    for asmdef_path in root_dir.rglob("*.asmdef"):
+        try:
+            asmdef_data = json.loads(asmdef_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
             continue
-        destination = runtime_dir / item.name
-        if item.is_dir():
-            log(f"导入目录到 Runtime: {item.name}")
-            shutil.copytree(item, destination, dirs_exist_ok=True, ignore=shutil.ignore_patterns(*IGNORED_NAMES, "*.pyc", "*.pyo"))
-        else:
-            log(f"导入文件到 Runtime: {item.name}")
-            shutil.copy2(item, destination)
+        asmdef_name = asmdef_data.get("name")
+        if isinstance(asmdef_name, str) and asmdef_name.strip():
+            asmdef_names.append(asmdef_name.strip())
+    return asmdef_names
+
+
+def _write_asmdef(asmdef_path: Path, asmdef_data: dict[str, object]) -> None:
+    asmdef_path.write_text(json.dumps(asmdef_data, ensure_ascii=False, indent=2) + os.linesep, encoding="utf-8")
 
 
 

@@ -88,6 +88,7 @@ class MainWindow(QMainWindow):
         self.author_email_input = QLineEdit()
         self.author_url_input = QLineEdit()
         self.package_slug_input = QLineEdit()
+        self.content_folder_input = QLineEdit()
 
         form.addRow("Package Name", self.package_name_input)
         form.addRow("Display Name", self.display_name_input)
@@ -98,6 +99,7 @@ class MainWindow(QMainWindow):
         form.addRow("Email", self.author_email_input)
         form.addRow("URL", self.author_url_input)
         form.addRow("导出目录名", self.package_slug_input)
+        form.addRow("内容子目录", self.content_folder_input)
         return box
 
     def _build_options_group(self) -> QGroupBox:
@@ -146,6 +148,7 @@ class MainWindow(QMainWindow):
         self.package_name_input.setText("com.company.package")
         self.display_name_input.setText("My Package")
         self.package_slug_input.setText("my-package")
+        self.content_folder_input.setText("ImportedContent")
         self.description_input.setText("Exported with Unity Package Maker")
         self.log("准备就绪。")
 
@@ -199,6 +202,7 @@ class MainWindow(QMainWindow):
             create_tgz=self.create_tgz_checkbox.isChecked(),
             overwrite=self.overwrite_checkbox.isChecked(),
             source_mode=self.mode_select.currentData(),
+            content_folder_name=self.content_folder_input.text(),
         )
 
     def _export(self) -> None:
